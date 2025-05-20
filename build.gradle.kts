@@ -4,6 +4,7 @@ import java.io.ByteArrayOutputStream
 
 plugins {
     application
+    alias(libs.plugins.collektive)
     alias(libs.plugins.gitSemVer)
     alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.kotlin.qa)
@@ -13,26 +14,10 @@ plugins {
 
 repositories {
     mavenCentral()
-}
-/*
- * Only required if you plan to use Protelis, remove otherwise
- */
-sourceSets {
-    main {
-        resources {
-            srcDir("src/main/protelis")
-        }
-    }
+    gradlePluginPortal()
 }
 
-val usesJvm: Int = File(File(projectDir, "docker/sim"), "Dockerfile")
-    .readLines()
-    .first { it.isNotBlank() }
-    .let {
-        Regex("FROM\\s+eclipse-temurin:(\\d+)\\s*$").find(it)?.groups?.get(1)?.value
-            ?: throw IllegalStateException("Cannot read information on the JVM to use.")
-    }
-    .toInt()
+val usesJvm: Int = 21
 
 multiJvm {
     jvmVersionForCompilation.set(usesJvm)
@@ -40,7 +25,8 @@ multiJvm {
 
 dependencies {
     implementation(kotlin("stdlib-jdk8"))
-    implementation(libs.bundles.alchemist.protelis)
+    implementation(kotlin("reflect"))
+    implementation(libs.bundles.alchemist.collektive)
     if (!GraphicsEnvironment.isHeadless()) {
         implementation("it.unibo.alchemist:alchemist-swingui:${libs.versions.alchemist.get()}")
     }

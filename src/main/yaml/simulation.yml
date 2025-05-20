@@ -1,4 +1,4 @@
-incarnation: protelis
+incarnation: collektive
 
 variables:
   seed: &seed
@@ -11,7 +11,7 @@ variables:
     parameters: [0.25, [0.25, 0.5]]
   error: &error
     type: ArbitraryVariable
-    parameters: [0.1, [0.1, 0.2]]
+    parameters: [0, [0.1, 0.2]]
 
 seeds:
   scenario: *seed
@@ -27,14 +27,10 @@ network-model:
 
 _gradient: &gradient
   - time-distribution: 1
-    # Writing Protelis programs within a YAML file is a bad experience
-    # (some characters need escaping, no syntax highlight, no code suggestions...)
-    # We recommend using the Protelis Eclipse plugin to write your code, then
-    # Loading the code as a module within Alchemist
-    # In order to run this example, make sure that src/main/protelis is part of
-    # your classpath (the Gradle script is already properly configured).
-    program: org:protelis:tutorial:distanceTo
-  - program: send
+    program:
+      name: gradcast
+      code: import it.unibo.gradcast.*
+      entrypoint: experiment(device)
 
 deployments:
   type: Grid
@@ -68,6 +64,6 @@ export:
         aggregators: [mean, min, max]
         value-filter: onlyfinite
 
-terminate:
-  type: AfterTime
-  parameters: 150
+#terminate:
+#  type: AfterTime
+#  parameters: 150

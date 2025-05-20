@@ -1,16 +1,20 @@
 [versions]
 alchemist = "42.0.5"
 kotlin = "2.1.20"
+collektive = "24.0.9"
 
 [libraries]
 alchemist = { module = "it.unibo.alchemist:alchemist", version.ref = "alchemist" }
-alchemist-protelis = { module = "it.unibo.alchemist:alchemist-incarnation-protelis", version.ref = "alchemist" }
-alchemist-scafi = { module = "it.unibo.alchemist:alchemist-incarnation-scafi", version.ref = "alchemist" }
+alchemist-collektive = { module = "it.unibo.collektive:alchemist-incarnation-collektive", version.ref = "collektive" }
+collektive-dsl = { module = "it.unibo.collektive:collektive-dsl", version.ref = "collektive" }
+collektive-stdlib = { module = "it.unibo.collektive:collektive-stdlib", version.ref = "collektive" }
+collektive-plugin = { module = "it.unibo.collektive:collektive-compiler-plugin", version.ref = "collektive" }
 
 [bundles]
-alchemist-protelis = [ "alchemist", "alchemist-protelis" ]
+alchemist-collektive = [ "alchemist", "alchemist-collektive", "collektive-dsl", "collektive-stdlib", "collektive-plugin" ]
 
 [plugins]
+collektive = { id = "it.unibo.collektive.collektive-plugin", version.ref = "collektive" }
 gitSemVer = { id = "org.danilopianini.git-sensitive-semantic-versioning", version = "4.0.2" }
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 kotlin-qa = { id = "org.danilopianini.gradle-kotlin-qa", version = "0.85.0" }
