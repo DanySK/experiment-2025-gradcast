@@ -23,7 +23,7 @@ val maxPaths = 10000
 
 fun Aggregate<Int>.bullsEye(metric: Field<Int, Double>): Double {
     // Creates a gradient from a randomly chosen node (using gossipMin), measuring distances based on the provided metric.
-    val distToRandom = distanceTo(gossipMin(localId) == localId, metric, maxPaths)
+    val distToRandom = distanceTo(gossipMin(localId) == localId, metric, maxPaths, isRiemannianManifold = false)
 
     // Finds the node that is farthest from the random starting node. This will serve as the first “extreme” of the network.
     val firstExtreme = gossipMax(distToRandom to localId, compareBy { it.first }).second

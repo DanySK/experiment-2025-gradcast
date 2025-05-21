@@ -11,8 +11,9 @@ package it.unibo.collektive.stdlib.spreading
 import it.unibo.collektive.aggregate.Field
 import it.unibo.collektive.aggregate.api.Aggregate
 import it.unibo.collektive.aggregate.api.DelicateCollektiveApi
+import it.unibo.collektive.aggregate.api.exchange
+import it.unibo.collektive.aggregate.api.mapNeighborhood
 import it.unibo.collektive.aggregate.api.share
-import it.unibo.collektive.stdlib.fields.foldValues
 import it.unibo.collektive.stdlib.fields.minValueBy
 import it.unibo.collektive.stdlib.util.Reducer
 import it.unibo.collektive.stdlib.util.coerceIn
@@ -120,68 +121,81 @@ inline fun <reified ID : Any, reified Value, reified Distance : Comparable<Dista
     }
     val coercedMetric = metric.coerceIn(bottom, top)
     val fromLocalSource = if (source) setOf(GradientPath(bottom, emptyList<ID>(), local)) else emptySet()
-    return share(fromLocalSource) { neighborData: Field<ID, Set<GradientPath<ID, Value, Distance>>> ->
-        val nonLoopingPaths = neighborData.mapValues { paths -> paths.filter { localId !in it.hops } }
-        val nonLoopingPathsMap by lazy { nonLoopingPaths.excludeSelf() }
-        val neighbors by lazy { nonLoopingPaths.neighbors }
-        val distanceUpdatedPaths = nonLoopingPaths.alignedMap(coercedMetric) { neighbor: ID, paths, distanceToNeighbor ->
-            paths.mapNotNull { path ->
-                if (path.comesFromSource) {
-                    path.update(neighbor, distanceToNeighbor, bottom, top, accumulateDistance, accumulateData)
-                } else if (neighbor == localId || localId in path) {
-                    // Previous data, discarded anyway when reducing, or loopback to self
-                    null
-                } else if (isRiemannianManifold && neighbors.any { it in path }) {
-                    // In Riemannian manifolds, the distance is always positive and the triangle inequality holds.
-                    // Thus, we can safely discard paths that pass through a direct neighbor
-                    // (except for neighbors that are sources),
-                    // as the distance will be always larger than getting to the neighbor directly.
-                    null
-                } else {
-                    // If there are neighbors along the path, make sure that these neighbors' paths to the same
-                    // source do not pass through the neighbor device (loop)
-                    val isValid = path.hops.all { intermediateHop ->
-                        when {
-                            intermediateHop !in neighbors -> true
-                            else -> {
-                                val relevantPath = nonLoopingPathsMap[intermediateHop]
-                                    ?.firstOrNull { it.source == path.source }
-                                    ?.hops
-                                relevantPath != null && neighbor !in relevantPath
+    return exchange(fromLocalSource) { neighborData: Field<ID, Set<GradientPath<ID, Value, Distance>>> ->
+        val nonLoopingPaths = neighborData.alignedMap(metric) { id, paths, distance ->
+            when (id) {
+                localId -> emptyList()
+                else -> paths.filter { localId !in it.hops }
+                    .map { it.update(id, distance, bottom, top, accumulateDistance, accumulateData) }
+            }
+        }.excludeSelf().values.flatten().sorted()
+        val allNeighbors = neighborData.neighbors
+        val shortestBySource = mutableMapOf<ID, GradientPath<ID, Value, Distance>>()
+        val shortestByNextHop = mutableMapOf<ID, GradientPath<ID, Value, Distance>>()
+        fun MutableMap<ID, *>.removeIfSame(key: ID, current: Any, other: Any) {
+            if (current == other) {
+                remove(key)
+            }
+        }
+        nonLoopingPaths.forEach { reference ->
+            val source = reference.source
+            val bestBySource = shortestBySource.getOrPut(source) { reference }
+            if (bestBySource == reference || bestBySource.distance > reference.distance) {
+                val nextHop = checkNotNull(reference.nextHop)
+                val bestByNextHop = shortestByNextHop.getOrPut(nextHop) { reference }
+                if (bestByNextHop == reference || bestByNextHop.distance > reference.distance) {
+                    /*
+                     * Path-coherence: paths that contain inconsistent information must be removed.
+                     * In particular, if some path passes through A and then B, and another reaches
+                     * through B and then A, we must keep only the shortest
+                     * (unless they have the same path-length, namely the network is symmetric).
+                     */
+                    val refSize = reference.hops.size
+                    val incoherent = refSize > 1 && nonLoopingPaths.any { other ->
+                        val otherSize = other.hops.size
+                        var coherent = reference.hops.subList(0, refSize - 1).asReversed().asSequence()
+                            .filter { it in allNeighbors }
+                            .all {
+                                // Always false for Riemannian manifolds
+                                val distanceOfDirectConnection = shortestByNextHop[it]?.distance ?: top
+                                reference.distance < distanceOfDirectConnection
+                            }
+                        val shorter = coherent && otherSize < refSize
+                        if (shorter || otherSize == refSize && other.distance != reference.distance) {
+                            var hopIndex = 0
+                            while (coherent && hopIndex < otherSize) {
+                                val hop = other.hops[hopIndex]
+                                val indexOfHop = reference.hops.indexOf(hop)
+                                if (indexOfHop >= 0) {
+                                    val subPathForward = other.hops.subList(hopIndex, otherSize)
+                                    coherent = reference.hops.subList(0, indexOfHop).none { it in subPathForward }
+                                }
+                                hopIndex++
                             }
                         }
+                        !coherent
                     }
-                    if (isValid) {
-                        path.update(neighbor, distanceToNeighbor, bottom, top, accumulateDistance, accumulateData)
+                    if (incoherent) {
+                        shortestBySource.removeIfSame(source, bestBySource, reference)
+                        shortestByNextHop.removeIfSame(nextHop, bestByNextHop, reference)
                     } else {
-                        null
+                        shortestByNextHop[nextHop] = reference
+                        shortestBySource[source] = reference
                     }
+                } else {
+                    shortestBySource.removeIfSame(source, bestBySource, reference)
                 }
             }
         }
-        /*
-         * Take one path per source and neighbor (the one with the shortest distance).
-         */
-        val candidatePaths = distanceUpdatedPaths.foldValues(
-            mutableMapOf<ID, GradientPath<ID, Value, Distance>>(),
-        ) { accumulator, paths ->
-            paths.forEach { path ->
-                val key = path.hops.first()
-                val previous = accumulator.getOrPut(key) { path }
-                if (previous.distance > path.distance) {
-                    accumulator[key] = path
-                }
-            }
-            accumulator
-        }.values.sorted()
+        val relevantPaths = shortestBySource.values.intersect(shortestByNextHop.values).sorted().asSequence()
         /*
          * Keep at most maxPaths paths, including the local source.
          */
-        val topCandidates = candidatePaths.asSequence()
-            .take(maxPaths - fromLocalSource.size)
-        println("$localId shares ${fromLocalSource.size + topCandidates.count()} paths")
-        fromLocalSource + topCandidates
-    }.firstOrNull()?.data ?: local
+        val maxIndirectPaths = maxPaths - fromLocalSource.size
+        mapNeighborhood { neighbor ->
+            fromLocalSource + relevantPaths.filter { it.nextHop != neighbor }.take(maxIndirectPaths)
+        }
+    }.local.value.firstOrNull()?.data ?: local
 }
 
 /**
@@ -384,9 +398,11 @@ data class GradientPath<ID: Any, Value, Distance: Comparable<Distance>> (
     val data: Value,
 ): Comparable<GradientPath<ID, Value, Distance>> {
 
-    val source: ID? get() = hops.firstOrNull()
+    val source: ID get() = hops.first()
 
     val nextHop get() = hops.last()
+
+    val length get() = hops.size
 
     /**
      * Returns `true` if this path has been directly provided by a source
