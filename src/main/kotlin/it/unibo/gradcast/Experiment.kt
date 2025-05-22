@@ -15,8 +15,8 @@ import kotlin.math.hypot
 fun <P: Position<P>> Aggregate<Int>.experiment(device: CollektiveDevice<P>): Double {
 //    val isSource: Boolean = device.randomGenerator.nextInt() % 50 == 0
     val metric = with(device) { distances() }
-//    return distanceTo(localId == 0, isRiemannianManifold = false, metric = metric)
-    return (bullsEye(metric) * 1000).toInt() / 1000.0
+    return distanceTo(localId == 0, metric)
+//    return (bullsEye(metric) * 1000).toInt() / 1000.0
 }
 
 val maxPaths = 10000

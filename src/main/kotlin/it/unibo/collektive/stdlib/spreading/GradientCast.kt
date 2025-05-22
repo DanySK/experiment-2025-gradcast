@@ -116,86 +116,93 @@ inline fun <reified ID : Any, reified Value, reified Distance : Comparable<Dista
         { _, _, data -> data },
     crossinline accumulateDistance: Reducer<Distance>,
 ): Value {
-    require(maxPaths > 0) {
-        "Computing the gradient requires at least one-path memory"
-    }
     val coercedMetric = metric.coerceIn(bottom, top)
-    val fromLocalSource = if (source) setOf(GradientPath(bottom, emptyList<ID>(), local)) else emptySet()
-    return exchange(fromLocalSource) { neighborData: Field<ID, Set<GradientPath<ID, Value, Distance>>> ->
-        val nonLoopingPaths = neighborData.alignedMap(metric) { id, paths, distance ->
+    val fromLocalSource = if (source) GradientPath(bottom, emptyList<ID>(), local) else null
+    return exchange(fromLocalSource) { neighborData: Field<ID, GradientPath<ID, Value, Distance>?> ->
+        val nonLoopingPathsByNeighbor = neighborData.alignedMap(coercedMetric) { id, path, distance ->
             when (id) {
-                localId -> emptyList()
-                else -> paths.filter { localId !in it.hops }
-                    .map { it.update(id, distance, bottom, top, accumulateDistance, accumulateData) }
+                localId -> null
+                else -> path?.takeIf { localId !in it.hops }
+                    ?.update(id, distance, bottom, top, accumulateDistance, accumulateData)
             }
-        }.excludeSelf().values.flatten().sorted()
-        val allNeighbors = neighborData.neighbors
-        val shortestBySource = mutableMapOf<ID, GradientPath<ID, Value, Distance>>()
-        val shortestByNextHop = mutableMapOf<ID, GradientPath<ID, Value, Distance>>()
-        fun MutableMap<ID, *>.removeIfSame(key: ID, current: Any, other: Any) {
-            if (current == other) {
-                remove(key)
-            }
-        }
-        nonLoopingPaths.forEach { reference ->
-            val source = reference.source
-            val bestBySource = shortestBySource.getOrPut(source) { reference }
-            if (bestBySource == reference || bestBySource.distance > reference.distance) {
-                val nextHop = checkNotNull(reference.nextHop)
-                val bestByNextHop = shortestByNextHop.getOrPut(nextHop) { reference }
-                if (bestByNextHop == reference || bestByNextHop.distance > reference.distance) {
+        }.excludeSelf()
+        val nonLoopingPaths = nonLoopingPathsByNeighbor.values.filterNotNull().sorted()
+        val best = when {
+            fromLocalSource != null -> listOf(fromLocalSource)
+            else -> {
+                val neighbors = nonLoopingPathsByNeighbor.keys
+                val nonNeighborLoopingPaths = nonLoopingPaths.filter { reference ->
+                    /*
+                     * Remove paths that go through a neighbor along a path that is not shorter than a direct connection.
+                     */
+                    reference.hops.subList(0, reference.hops.size - 1).asReversed().asSequence()
+                        .filter { it in neighbors }
+                        .map { nonLoopingPathsByNeighbor[it]?.distance ?: bottom }
+                        .all { reference.distance < it }
+                }
+                val pathsHopSets by lazy { nonLoopingPaths.associate { it.nextHop to it.hops.toSet() } }
+                val coherentPaths = nonNeighborLoopingPaths.filter { reference ->
                     /*
                      * Path-coherence: paths that contain inconsistent information must be removed.
-                     * In particular, if some path passes through A and then B, and another reaches
+                     * In particular, if some path passes through A and then B, and another reaches the source
                      * through B and then A, we must keep only the shortest
                      * (unless they have the same path-length, namely the network is symmetric).
                      */
                     val refSize = reference.hops.size
-                    val incoherent = refSize > 1 && nonLoopingPaths.any { other ->
+                    val regNeighborSet by lazy { reference.hops.toSet() }
+                    refSize <= 1 || nonLoopingPaths.all { other ->
                         val otherSize = other.hops.size
-                        var coherent = reference.hops.subList(0, refSize - 1).asReversed().asSequence()
-                            .filter { it in allNeighbors }
-                            .all {
-                                // Always false for Riemannian manifolds
-                                val distanceOfDirectConnection = shortestByNextHop[it]?.distance ?: top
-                                reference.distance < distanceOfDirectConnection
-                            }
-                        val shorter = coherent && otherSize < refSize
-                        if (shorter || otherSize == refSize && other.distance != reference.distance) {
-                            var hopIndex = 0
-                            while (coherent && hopIndex < otherSize) {
-                                val hop = other.hops[hopIndex]
-                                val indexOfHop = reference.hops.indexOf(hop)
-                                if (indexOfHop >= 0) {
-                                    val subPathForward = other.hops.subList(hopIndex, otherSize)
-                                    coherent = reference.hops.subList(0, indexOfHop).none { it in subPathForward }
+                        val otherIsShorter = otherSize < refSize
+                        when {
+                            otherIsShorter || otherSize == refSize && other.distance != reference.distance -> {
+                                // these are ordered the same as reference.hops
+                                val otherHops = pathsHopSets[other.nextHop].orEmpty()
+                                val commonHops = regNeighborSet.intersect(otherHops)
+                                when (commonHops.size)  {
+                                    0, 1 -> true
+                                    else -> {
+                                        // otherHops and commonHops must have the same order for all elements in commonHops
+                                        val commonIterator = commonHops.iterator()
+                                        val otherIterator = otherHops.iterator()
+                                        var matches = 0
+                                        while (commonIterator.hasNext() && otherIterator.hasNext()) {
+                                            val common = commonIterator.next()
+                                            val matchesSoFar = matches
+                                            while (otherIterator.hasNext() && matchesSoFar == matches) {
+                                                if (common == otherIterator.next()) {
+                                                    matches++
+                                                }
+                                            }
+                                        }
+                                        matches == commonHops.size
+                                    }
                                 }
-                                hopIndex++
                             }
+                            else -> true
                         }
-                        !coherent
+//                        if () {
+//
+//                            var hopIndex = 0
+//                            while (coherent && hopIndex < otherSize) {
+//                                val hop = other.hops[hopIndex]
+//                                val indexOfHop = reference.hops.indexOf(hop)
+//                                if (indexOfHop >= 0) {
+//                                    val subPathForward = other.hops.subList(hopIndex, otherSize)
+//                                    coherent = reference.hops.subList(0, indexOfHop).none { it in subPathForward }
+//                                }
+//                                hopIndex++
+//                            }
+//                        } else {
+//                            true
+//                        }
+//                        coherent
                     }
-                    if (incoherent) {
-                        shortestBySource.removeIfSame(source, bestBySource, reference)
-                        shortestByNextHop.removeIfSame(nextHop, bestByNextHop, reference)
-                    } else {
-                        shortestByNextHop[nextHop] = reference
-                        shortestBySource[source] = reference
-                    }
-                } else {
-                    shortestBySource.removeIfSame(source, bestBySource, reference)
                 }
+                coherentPaths
             }
         }
-        val relevantPaths = shortestBySource.values.intersect(shortestByNextHop.values).sorted().asSequence()
-        /*
-         * Keep at most maxPaths paths, including the local source.
-         */
-        val maxIndirectPaths = maxPaths - fromLocalSource.size
-        mapNeighborhood { neighbor ->
-            fromLocalSource + relevantPaths.filter { it.nextHop != neighbor }.take(maxIndirectPaths)
-        }
-    }.local.value.firstOrNull()?.data ?: local
+        mapNeighborhood { neighbor -> best.firstOrNull { it.hops.lastOrNull() != neighbor } }
+    }.local.value?.data ?: local
 }
 
 /**
