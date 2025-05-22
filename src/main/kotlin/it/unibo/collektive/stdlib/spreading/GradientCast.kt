@@ -21,8 +21,6 @@ import it.unibo.collektive.stdlib.util.hops
 import it.unibo.collektive.stdlib.util.nonOverflowingPlus
 import kotlin.jvm.JvmOverloads
 
-const val DEFAULT_MAX_PATHS = 2
-
 /**
  * Propagate [local] values across a spanning tree starting from the closest [source].
  *
@@ -110,8 +108,7 @@ inline fun <reified ID : Any, reified Value, reified Distance : Comparable<Dista
     bottom: Distance,
     top: Distance,
     metric: Field<ID, Distance>,
-    maxPaths: Int = DEFAULT_MAX_PATHS,
-    isRiemannianManifold: Boolean = true,
+    maxDiameter: Int = Integer.MAX_VALUE,
     noinline accumulateData: (fromSource: Distance, toNeighbor: Distance, neighborData: Value) -> Value =
         { _, _, data -> data },
     crossinline accumulateDistance: Reducer<Distance>,
@@ -119,29 +116,31 @@ inline fun <reified ID : Any, reified Value, reified Distance : Comparable<Dista
     val coercedMetric = metric.coerceIn(bottom, top)
     val fromLocalSource = if (source) GradientPath(bottom, emptyList<ID>(), local) else null
     return exchange(fromLocalSource) { neighborData: Field<ID, GradientPath<ID, Value, Distance>?> ->
-        val nonLoopingPathsByNeighbor = neighborData.alignedMap(coercedMetric) { id, path, distance ->
-            when (id) {
-                localId -> null
-                else -> path?.takeIf { localId !in it.hops }
-                    ?.update(id, distance, bottom, top, accumulateDistance, accumulateData)
-            }
-        }.excludeSelf()
-        val nonLoopingPaths = nonLoopingPathsByNeighbor.values.filterNotNull().sorted()
-        val best = when {
-            fromLocalSource != null -> listOf(fromLocalSource)
-            else -> {
-                val neighbors = nonLoopingPathsByNeighbor.keys
-                val nonNeighborLoopingPaths = nonLoopingPaths.filter { reference ->
-                    /*
-                     * Remove paths that go through a neighbor along a path that is not shorter than a direct connection.
-                     */
-                    reference.hops.subList(0, reference.hops.size - 1).asReversed().asSequence()
-                        .filter { it in neighbors }
-                        .map { nonLoopingPathsByNeighbor[it]?.distance ?: bottom }
-                        .all { reference.distance < it }
+        val neighbors = neighborData.neighbors
+        // Accumulated distances with neighbors, to be used to exclude invalid paths
+        val accDistances = neighborData.alignedMapValues(coercedMetric) { path, distance ->
+            path?.distance?.let { accumulateDistance(it, distance) }
+        }
+        val neighborAccumulatedDistances = accDistances.excludeSelf()
+        val nonLoopingPaths = neighborData.alignedMap(accDistances, coercedMetric) { id, path, accDist, distance ->
+            when {
+                id == localId || path == null || path.hops.size > maxDiameter || localId in path.hops-> null
+                // Remove paths that go through a neighbor along a path that is not shorter than a direct connection.
+                accDist != null && path.hops.asSequence()
+                    .filter { it in neighbors }
+                    .map { neighborAccumulatedDistances[it] }
+                    .any { it == null || it < accDist } -> null
+                // Transform the remaining paths
+                else -> accDist to lazy {
+                    path.update(id, distance, bottom, top, accumulateDistance, accumulateData)
                 }
+            }
+        }.excludeSelf().values.asSequence().filterNotNull().sortedBy { it.first }.map { it.second.value }
+        val best = when {
+            fromLocalSource != null -> sequenceOf(fromLocalSource)
+            else -> {
                 val pathsHopSets by lazy { nonLoopingPaths.associate { it.nextHop to it.hops.toSet() } }
-                val coherentPaths = nonNeighborLoopingPaths.filter { reference ->
+                nonLoopingPaths.filter { reference ->
                     /*
                      * Path-coherence: paths that contain inconsistent information must be removed.
                      * In particular, if some path passes through A and then B, and another reaches the source
@@ -149,7 +148,6 @@ inline fun <reified ID : Any, reified Value, reified Distance : Comparable<Dista
                      * (unless they have the same path-length, namely the network is symmetric).
                      */
                     val refSize = reference.hops.size
-                    val regNeighborSet by lazy { reference.hops.toSet() }
                     refSize <= 1 || nonLoopingPaths.all { other ->
                         val otherSize = other.hops.size
                         val otherIsShorter = otherSize < refSize
@@ -157,8 +155,8 @@ inline fun <reified ID : Any, reified Value, reified Distance : Comparable<Dista
                             otherIsShorter || otherSize == refSize && other.distance != reference.distance -> {
                                 // these are ordered the same as reference.hops
                                 val otherHops = pathsHopSets[other.nextHop].orEmpty()
-                                val commonHops = regNeighborSet.intersect(otherHops)
-                                when (commonHops.size)  {
+                                val commonHops = reference.hops.filter { it in otherHops }
+                                when (commonHops.size) {
                                     0, 1 -> true
                                     else -> {
                                         // otherHops and commonHops must have the same order for all elements in commonHops
@@ -180,28 +178,12 @@ inline fun <reified ID : Any, reified Value, reified Distance : Comparable<Dista
                             }
                             else -> true
                         }
-//                        if () {
-//
-//                            var hopIndex = 0
-//                            while (coherent && hopIndex < otherSize) {
-//                                val hop = other.hops[hopIndex]
-//                                val indexOfHop = reference.hops.indexOf(hop)
-//                                if (indexOfHop >= 0) {
-//                                    val subPathForward = other.hops.subList(hopIndex, otherSize)
-//                                    coherent = reference.hops.subList(0, indexOfHop).none { it in subPathForward }
-//                                }
-//                                hopIndex++
-//                            }
-//                        } else {
-//                            true
-//                        }
-//                        coherent
                     }
                 }
-                coherentPaths
             }
         }
-        mapNeighborhood { neighbor -> best.firstOrNull { it.hops.lastOrNull() != neighbor } }
+        val bestLazyList = best.map { lazy { it } }.toList()
+        mapNeighborhood { neighbor -> bestLazyList.firstOrNull { it.value.hops.lastOrNull() != neighbor }?.value }
     }.local.value?.data ?: local
 }
 
@@ -225,8 +207,7 @@ inline fun <reified ID : Any, reified Type> Aggregate<ID>.gradientCast(
     source: Boolean,
     local: Type,
     metric: Field<ID, Double>,
-    maxPaths: Int = DEFAULT_MAX_PATHS,
-    isRiemannianManifold: Boolean = true,
+    maxDiameter: Int = Integer.MAX_VALUE,
     noinline accumulateData: (fromSource: Double, toNeighbor: Double, data: Type) -> Type = { _, _, data -> data },
     crossinline accumulateDistance: Reducer<Double> = Double::plus,
 ): Type = gradientCast(
@@ -235,8 +216,7 @@ inline fun <reified ID : Any, reified Type> Aggregate<ID>.gradientCast(
     0.0,
     Double.POSITIVE_INFINITY,
     metric,
-    maxPaths,
-    isRiemannianManifold,
+    maxDiameter,
     accumulateData,
     accumulateDistance,
 )
@@ -261,8 +241,7 @@ inline fun <reified ID : Any, reified Type> Aggregate<ID>.intGradientCast(
     source: Boolean,
     local: Type,
     metric: Field<ID, Int>,
-    maxPaths: Int = DEFAULT_MAX_PATHS,
-    isRiemannianManifold: Boolean = true,
+    maxDiameter: Int = Integer.MAX_VALUE,
     noinline accumulateData: (fromSource: Int, toNeighbor: Int, data: Type) -> Type = { _, _, data -> data },
     crossinline accumulateDistance: Reducer<Int> = Int::nonOverflowingPlus,
 ): Type = gradientCast(
@@ -271,8 +250,7 @@ inline fun <reified ID : Any, reified Type> Aggregate<ID>.intGradientCast(
     0,
     Int.MAX_VALUE,
     metric,
-    maxPaths,
-    isRiemannianManifold,
+    maxDiameter,
     accumulateData,
     accumulateDistance,
 )
@@ -294,9 +272,9 @@ inline fun <reified ID : Any, reified Type> Aggregate<ID>.intGradientCast(
 inline fun <reified ID : Any, reified Type> Aggregate<ID>.hopGradientCast(
     source: Boolean,
     local: Type,
-    maxPaths: Int = DEFAULT_MAX_PATHS,
+    maxDiameter: Int = Integer.MAX_VALUE,
     noinline accumulateData: (fromSource: Int, toNeighbor: Int, data: Type) -> Type = { _, _, data -> data },
-): Type = intGradientCast(source, local, hops(), maxPaths, true, accumulateData, Int::plus)
+): Type = intGradientCast(source, local, hops(), maxDiameter, accumulateData, Int::plus)
 
 /**
  * Provided a list of [sources], propagates information from each, collecting it in a map.
@@ -312,8 +290,7 @@ inline fun <reified ID : Any, reified Value, reified Distance : Comparable<Dista
     bottom: Distance,
     top: Distance,
     metric: Field<ID, Distance>,
-    maxPaths: Int = DEFAULT_MAX_PATHS,
-    isRiemannianManifold: Boolean = true,
+    maxDiameter: Int = Integer.MAX_VALUE,
     noinline accumulateData: (fromSource: Distance, toNeighbor: Distance, data: Value) -> Value =
         { _, _, data -> data },
     crossinline accumulateDistance: Reducer<Distance>,
@@ -325,8 +302,7 @@ inline fun <reified ID : Any, reified Value, reified Distance : Comparable<Dista
             bottom,
             top,
             metric,
-            maxPaths,
-            isRiemannianManifold,
+            maxDiameter,
             accumulateData,
             accumulateDistance,
         )
@@ -345,8 +321,7 @@ inline fun <reified ID : Any, reified Value> Aggregate<ID>.multiGradientCast(
     sources: Iterable<ID>,
     local: Value,
     metric: Field<ID, Double>,
-    maxPaths: Int = DEFAULT_MAX_PATHS,
-    isRiemannianManifold: Boolean = true,
+    maxDiameter: Int = Integer.MAX_VALUE,
     noinline accumulateData: (fromSource: Double, toNeighbor: Double, data: Value) -> Value = { _, _, data -> data },
 ): Map<ID, Value> = sources.associateWith { source ->
     alignedOn(source) {
@@ -354,8 +329,7 @@ inline fun <reified ID : Any, reified Value> Aggregate<ID>.multiGradientCast(
             source = source == localId,
             local = local,
             metric = metric,
-            maxPaths = maxPaths,
-            isRiemannianManifold = isRiemannianManifold,
+            maxDiameter = maxDiameter,
             accumulateData,
             Double::plus,
         )
@@ -374,8 +348,7 @@ inline fun <reified ID : Any, reified Value> Aggregate<ID>.multiIntGradientCast(
     sources: Iterable<ID>,
     local: Value,
     metric: Field<ID, Int> = hops(),
-    maxPaths: Int = DEFAULT_MAX_PATHS,
-    isRiemannianManifold: Boolean = true,
+    maxDiameter: Int = Integer.MAX_VALUE,
     noinline accumulateData: (fromSource: Int, toNeighbor: Int, data: Value) -> Value = { _, _, data -> data },
 ): Map<ID, Value> = sources.associateWith { source ->
     alignedOn(source) {
@@ -383,8 +356,7 @@ inline fun <reified ID : Any, reified Value> Aggregate<ID>.multiIntGradientCast(
             source = source == localId,
             local = local,
             metric = metric,
-            maxPaths = maxPaths,
-            isRiemannianManifold = isRiemannianManifold,
+            maxDiameter = maxDiameter,
             accumulateData = accumulateData,
             accumulateDistance = Int::nonOverflowingPlus,
         )

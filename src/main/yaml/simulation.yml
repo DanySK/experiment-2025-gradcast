@@ -23,7 +23,7 @@ launcher:
 
 network-model:
   type: ConnectWithinDistance
-  parameters: [0.5]
+  parameters: [0.4]
 
 _gradient: &gradient
   - time-distribution: 1

@@ -15,15 +15,15 @@ import kotlin.math.hypot
 fun <P: Position<P>> Aggregate<Int>.experiment(device: CollektiveDevice<P>): Double {
 //    val isSource: Boolean = device.randomGenerator.nextInt() % 50 == 0
     val metric = with(device) { distances() }
-    return distanceTo(localId == 0, metric)
-//    return (bullsEye(metric) * 1000).toInt() / 1000.0
+    return distanceTo(localId == 0 || localId == 1000 || localId == 100, metric)
+    //return (bullsEye(metric) * 1000).toInt() / 1000.0
 }
 
 val maxPaths = 10000
 
 fun Aggregate<Int>.bullsEye(metric: Field<Int, Double>): Double {
     // Creates a gradient from a randomly chosen node (using gossipMin), measuring distances based on the provided metric.
-    val distToRandom = distanceTo(gossipMin(localId) == localId, metric, maxPaths, isRiemannianManifold = false)
+    val distToRandom = distanceTo(gossipMin(localId) == localId, metric, maxPaths)
 
     // Finds the node that is farthest from the random starting node. This will serve as the first “extreme” of the network.
     val firstExtreme = gossipMax(distToRandom to localId, compareBy { it.first }).second
