@@ -9,17 +9,14 @@
 package it.unibo.collektive.stdlib.spreading
 
 import it.unibo.collektive.aggregate.Field
-import it.unibo.collektive.aggregate.api.Aggregate
-import it.unibo.collektive.aggregate.api.DelicateCollektiveApi
-import it.unibo.collektive.aggregate.api.exchange
-import it.unibo.collektive.aggregate.api.mapNeighborhood
-import it.unibo.collektive.aggregate.api.share
+import it.unibo.collektive.aggregate.api.*
 import it.unibo.collektive.stdlib.fields.minValueBy
 import it.unibo.collektive.stdlib.util.Reducer
 import it.unibo.collektive.stdlib.util.coerceIn
 import it.unibo.collektive.stdlib.util.hops
 import it.unibo.collektive.stdlib.util.nonOverflowingPlus
-import kotlin.jvm.JvmOverloads
+import kotlin.contracts.ExperimentalContracts
+import kotlin.contracts.contract
 
 /**
  * Propagate [local] values across a spanning tree starting from the closest [source].
@@ -47,11 +44,7 @@ inline fun <reified ID, reified Value, reified Distance> Aggregate<ID>.bellmanFo
     val distances = metric.coerceIn(bottom, top)
     return share(topValue) { neighborData ->
         val pathsThroughNeighbors = neighborData.alignedMapValues(distances) { (fromSource, data), toNeighbor ->
-            val totalDistance = accumulateDistance(fromSource, toNeighbor).coerceIn(bottom, top)
-            check(totalDistance >= fromSource && totalDistance >= toNeighbor) {
-                "The provided distance accumulation function violates the triangle inequality: " +
-                        "accumulating $fromSource and $toNeighbor produced $totalDistance"
-            }
+            val totalDistance = accumulate(bottom, top, fromSource, toNeighbor, accumulateDistance)
             val newData = accumulateData(fromSource, toNeighbor, data)
             totalDistance to newData
         }
@@ -97,8 +90,8 @@ inline fun <reified ID, reified Value> Aggregate<ID>.bellmanFordGradientCast(
  * This function features *fast repair*, and it is **not** subject to the *rising value problem*,
  * see [Fast self-healing gradients](https://doi.org/10.1145/1363686.1364163).
  *
- * On the other hand, it requires larger messages and more processing than the classic
- * [bellmanFordGradientCast].
+ * On the other hand, it requires larger messages and more processing than the classic [bellmanFordGradientCast].
+ * Performance can be optimized if an upper bound on the network diameter is provided through [maxDiameter].
  */
 @OptIn(DelicateCollektiveApi::class)
 @JvmOverloads
@@ -124,7 +117,7 @@ inline fun <reified ID : Any, reified Value, reified Distance : Comparable<Dista
         val neighborAccumulatedDistances = accDistances.excludeSelf()
         val nonLoopingPaths = neighborData.alignedMap(accDistances, coercedMetric) { id, path, accDist, distance ->
             when {
-                id == localId || path == null || path.hops.size > maxDiameter || localId in path.hops-> null
+                id == localId || path == null || path.length > maxDiameter || localId in path.hops-> null
                 // Remove paths that go through a neighbor along a path that is not shorter than a direct connection.
                 accDist != null && path.hops.asSequence()
                     .filter { it in neighbors }
@@ -147,9 +140,9 @@ inline fun <reified ID : Any, reified Value, reified Distance : Comparable<Dista
                      * through B and then A, we must keep only the shortest
                      * (unless they have the same path-length, namely the network is symmetric).
                      */
-                    val refSize = reference.hops.size
+                    val refSize = reference.length
                     refSize <= 1 || nonLoopingPaths.all { other ->
-                        val otherSize = other.hops.size
+                        val otherSize = other.length
                         val otherIsShorter = otherSize < refSize
                         when {
                             otherIsShorter || otherSize == refSize && other.distance != reference.distance -> {
@@ -192,15 +185,14 @@ inline fun <reified ID : Any, reified Value, reified Distance : Comparable<Dista
  * retaining the value of the closest source.
  *
  * If there are no sources, default to [local] value.
- * The [metric] function is used to compute the distance between devices in form of a field of [Double]s,
- * [accumulateDistance] is used to accumulate distances, defaulting to a plain sum.
+ * The [metric] function is used to compute the distance between devices in form of a field of [Double]s.
  * [accumulateData] is used to modify data from neighbors on the fly, and defaults to the identity function.
  *
  * This function features *fast repair*, and it is **not** subject to the *rising value problem*,
  * see [Fast self-healing gradients](https://doi.org/10.1145/1363686.1364163).
  *
- * On the other hand, it requires larger messages and more processing than the classic
- * [bellmanFordGradientCast].
+ * On the other hand, it requires larger messages and more processing than the classic [bellmanFordGradientCast].
+ * Performance can be optimized if an upper bound on the network diameter is provided through [maxDiameter].
  */
 @JvmOverloads
 inline fun <reified ID : Any, reified Type> Aggregate<ID>.gradientCast(
@@ -233,8 +225,8 @@ inline fun <reified ID : Any, reified Type> Aggregate<ID>.gradientCast(
  * This function features *fast repair*, and it is **not** subject to the *rising value problem*,
  * see [Fast self-healing gradients](https://doi.org/10.1145/1363686.1364163).
  *
- * On the other hand, it requires larger messages and more processing than the classic
- * [bellmanFordGradientCast].
+ * On the other hand, it requires larger messages and more processing than the classic [bellmanFordGradientCast].
+ * Performance can be optimized if an upper bound on the network diameter is provided through [maxDiameter].
  */
 @JvmOverloads
 inline fun <reified ID : Any, reified Type> Aggregate<ID>.intGradientCast(
@@ -265,8 +257,8 @@ inline fun <reified ID : Any, reified Type> Aggregate<ID>.intGradientCast(
  * This function features *fast repair*, and it is **not** subject to the *rising value problem*,
  * see [Fast self-healing gradients](https://doi.org/10.1145/1363686.1364163).
  *
- * On the other hand, it requires larger messages and more processing than the classic
- * [bellmanFordGradientCast].
+ * On the other hand, it requires larger messages and more processing than the classic [bellmanFordGradientCast].
+ * Performance can be optimized if an upper bound on the network diameter is provided through [maxDiameter].
  */
 @JvmOverloads
 inline fun <reified ID : Any, reified Type> Aggregate<ID>.hopGradientCast(
@@ -366,8 +358,7 @@ inline fun <reified ID : Any, reified Value> Aggregate<ID>.multiIntGradientCast(
 /**
  * A path segment along a potential field that reaches the current device,
  * after [distance], starting from [source],
- * passing [through] an intermediate direct neighbor,
- * carrying [data].
+ * carrying [data] through the [nextHop].
  *
  * This data class is designed to be shared within [gradientCast] and derivative functions.
  */
@@ -383,12 +374,6 @@ data class GradientPath<ID: Any, Value, Distance: Comparable<Distance>> (
 
     val length get() = hops.size
 
-    /**
-     * Returns `true` if this path has been directly provided by a source
-     * (namely, [source] == [through]).
-     */
-    val comesFromSource get() = hops.isEmpty()
-
     operator fun contains(id: ID): Boolean = hops.contains(id)
 
     /**
@@ -403,15 +388,30 @@ data class GradientPath<ID: Any, Value, Distance: Comparable<Distance>> (
         crossinline accumulateDistance: Reducer<Distance>,
         crossinline accumulateData: (fromSource: Distance, toNeighbor: Distance, data: Value) -> Value
     ): GradientPath<ID, Value, Distance> {
-        val totalDistance = accumulateDistance(distance, distanceToNeighbor).coerceIn(bottom, top)
-        check(totalDistance >= distance && totalDistance >= distanceToNeighbor) {
-            "The provided distance accumulation function violates the triangle inequality: " +
-                    "accumulating $distance and $distanceToNeighbor produced $totalDistance"
-        }
+        val totalDistance = accumulate(bottom, top, distance, distanceToNeighbor, accumulateDistance)
         val updatedData = accumulateData(distance, distanceToNeighbor, data)
         return GradientPath(totalDistance, hops + neighbor, updatedData)
     }
 
     override fun compareTo(other: GradientPath<ID, Value, Distance>) =
         compareBy<GradientPath<ID, Value, Distance>> { it.distance }.compare(this, other)
+}
+
+@OptIn(ExperimentalContracts::class)
+inline fun <D: Comparable<D>> accumulate(
+    bottom: D,
+    top: D,
+    distance: D,
+    distanceToNeighbor: D,
+    accumulator: Reducer<D>
+): D {
+    contract {
+        callsInPlace(accumulator, kotlin.contracts.InvocationKind.EXACTLY_ONCE)
+    }
+    val totalDistance = accumulator(distance, distanceToNeighbor).coerceIn(bottom, top)
+    check(totalDistance >= distance && totalDistance >= distanceToNeighbor) {
+        "The provided distance accumulation function violates the triangle inequality: " +
+                "accumulating $distance and $distanceToNeighbor produced $totalDistance"
+    }
+    return totalDistance
 }
