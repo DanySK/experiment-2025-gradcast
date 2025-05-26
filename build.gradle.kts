@@ -17,10 +17,14 @@ repositories {
     gradlePluginPortal()
 }
 
-val usesJvm: Int = 21
+val usesJvm: Int = rootProject.file(".java-version").readText().trim().substringBefore('.').toInt()
 
 multiJvm {
     jvmVersionForCompilation.set(usesJvm)
+}
+
+kotlin {
+    jvmToolchain(usesJvm)
 }
 
 dependencies {

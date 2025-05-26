@@ -4,6 +4,7 @@ WORKDIR /experiment
 COPY effects effects
 COPY gradle gradle
 COPY src src
+COPY .java-version ./
 COPY docker docker
 COPY *.kts ./
 COPY *.properties ./
