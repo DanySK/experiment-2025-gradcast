@@ -66,6 +66,9 @@ jobs:
     - name: Run compose
       run: docker compose up --build
   release:
+    permissions:
+      contents: write
+      packages: write
     needs:
       - check-simulations-native
       - check-simulations-docker
@@ -85,7 +88,6 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           submodules: recursive
-          token: ${{ secrets.DEPLOYMENT_TOKEN }}
       - name: Download charts artifact
         uses: actions/download-artifact@v4.2.1
         with:
@@ -104,7 +106,7 @@ jobs:
         run: echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin docker.io
       - name: Semantic Release
         env:
-          GITHUB_TOKEN: ${{ secrets.DEPLOYMENT_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           npm install
           npx semantic-release
