@@ -89,7 +89,7 @@ jobs:
         with:
           submodules: recursive
       - name: Download charts artifact
-        uses: actions/download-artifact@v4.3.0
+        uses: actions/download-artifact@v5.0.0
         with:
           name: charts
       - name: Find the version of Node from package.json
