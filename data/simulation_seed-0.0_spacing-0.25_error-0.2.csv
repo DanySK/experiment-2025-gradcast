@@ -1,0 +1,15 @@
+#####################################################################
+# Alchemist log file - simulation started at: 2025-09-12T21:34+0000 #
+#####################################################################
+#
+# seed = 0.0, spacing = 0.25, error = 0.2
+#
+# The columns have the following meaning: 
+# time org:protelis:tutorial:distanceTo[mean] org:protelis:tutorial:distanceTo[min] org:protelis:tutorial:distanceTo[max] 
+0.0 NaN NaN NaN
+6.203875256372005E-4 NaN NaN NaN
+1.0006203875256372 NaN NaN NaN
+2.000620387525637 NaN NaN NaN
+#####################################################################
+# End of data export. Simulation finished at: 2025-09-12T21:34+0000 #
+#####################################################################
