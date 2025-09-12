@@ -1,3 +1,4 @@
+import org.gradle.configurationcache.extensions.capitalized
 import java.awt.GraphicsEnvironment
 import java.io.ByteArrayOutputStream
 
@@ -16,17 +17,10 @@ repositories {
     gradlePluginPortal()
 }
 
-val usesJvm: Int = rootProject.file(".java-version").readText().trim().let { version ->
-    when {
-        version.startsWith("1.") -> version.substringAfter("1.").substringBefore('.').toInt()
-        else -> version.substringBefore('.').toInt()
-    }
-}
+val usesJvm: Int = rootProject.file(".java-version").readText().trim().substringBefore('.').toInt()
 
 multiJvm {
     jvmVersionForCompilation.set(usesJvm)
-    // Support both Java 21 and Java 23
-    maximumSupportedJvmVersion.set(23)
 }
 
 kotlin {
@@ -97,9 +91,7 @@ File(rootProject.rootDir.path + "/src/main/yaml").listFiles()
                 this.additionalConfiguration()
             }
         }
-        val capitalizedName = it.nameWithoutExtension.replaceFirstChar { 
-            if (it.isLowerCase()) it.titlecase() else it.toString() 
-        }
+        val capitalizedName = it.nameWithoutExtension.capitalized()
         val graphic by basetask("run${capitalizedName}Graphic") {
             args(
                 "--override",
