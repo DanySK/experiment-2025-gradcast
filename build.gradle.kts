@@ -16,7 +16,12 @@ repositories {
     gradlePluginPortal()
 }
 
-val usesJvm: Int = rootProject.file(".java-version").readText().trim().substringBefore('.').substringAfter("1.").toInt()
+val usesJvm: Int = rootProject.file(".java-version").readText().trim().let { version ->
+    when {
+        version.startsWith("1.") -> version.substringAfter("1.").substringBefore('.').toInt()
+        else -> version.substringBefore('.').toInt()
+    }
+}
 
 multiJvm {
     jvmVersionForCompilation.set(usesJvm)
