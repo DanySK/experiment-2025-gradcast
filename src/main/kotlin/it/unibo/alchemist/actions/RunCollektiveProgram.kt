@@ -64,8 +64,10 @@ class RunCollektiveProgram<P : Position<P>>(
         name: String = entrypoint.name,
     ) : this(node, name, buildEntryPoint(entrypoint))
 
-    override fun cloneAction(node: Node<Any?>, reaction: Reaction<Any?>): Action<Any?> =
-        RunCollektiveProgram(node, name)
+    override fun cloneAction(
+        node: Node<Any?>,
+        reaction: Reaction<Any?>,
+    ): Action<Any?> = RunCollektiveProgram(node, name)
 
     override fun execute() {
         collektiveProgram.cycle().also {
@@ -76,9 +78,7 @@ class RunCollektiveProgram<P : Position<P>>(
     override fun getContext(): Context = Context.NEIGHBORHOOD
 
     private companion object {
-        private fun <P : Position<P>> findEntrypoint(
-            entrypoint: String,
-        ): Aggregate<Int>.(CollektiveDevice<P>) -> Any? {
+        private fun <P : Position<P>> findEntrypoint(entrypoint: String): Aggregate<Int>.(CollektiveDevice<P>) -> Any? {
             val className = entrypoint.substringBeforeLast(".")
             val methodName = entrypoint.substringAfterLast(".")
             val clazz = Class.forName(className)
