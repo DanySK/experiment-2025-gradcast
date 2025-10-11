@@ -16,6 +16,10 @@ on:
   pull_request:
   workflow_dispatch:
 
+concurrency:
+  group: cicd-${{ github.workflow }}-${{ github.event.number || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
+
 jobs:
   inspect:
     runs-on: ubuntu-latest

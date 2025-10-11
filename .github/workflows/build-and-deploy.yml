@@ -9,9 +9,6 @@ jobs:
       matrix:
         os: [ windows-2025, macos-15, ubuntu-24.04 ]
     runs-on: ${{ matrix.os }}
-    concurrency:
-      group: sim-check${{ github.workflow }}${{ matrix.os }}${{ github.event.number || github.ref }}
-      cancel-in-progress: true
     steps:
     - name: Checkout
       uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
@@ -24,9 +21,6 @@ jobs:
         should-validate-wrapper: ${{ contains('Linux', runner.os) }}
   create-charts:
     runs-on: ubuntu-24.04
-    concurrency:
-      group: charts${{ github.workflow }}${{ matrix.os }}${{ github.event.number || github.ref }}
-      cancel-in-progress: true
     steps:
       - name: Checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
@@ -55,9 +49,6 @@ jobs:
           path: charts.tar.zst
   check-simulations-docker:
     runs-on: ubuntu-24.04
-    concurrency:
-      group: container-check${{ github.workflow }}${{ matrix.os }}${{ github.event.number || github.ref }}
-      cancel-in-progress: true
     steps:
     - name: Checkout
       uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
@@ -74,9 +65,6 @@ jobs:
       - check-simulations-docker
       - create-charts
     runs-on: ubuntu-24.04
-    concurrency:
-      # Only one release job at a time per branch, as only master releases.
-      group: release-${{ github.event.number || github.ref }}
     if: >-
       !github.event.repository.fork
       && (
