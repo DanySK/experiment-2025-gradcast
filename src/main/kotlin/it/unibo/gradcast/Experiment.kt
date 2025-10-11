@@ -6,17 +6,17 @@ import it.unibo.alchemist.model.Position
 import it.unibo.collektive.aggregate.Field
 import it.unibo.collektive.aggregate.api.Aggregate
 import it.unibo.collektive.stdlib.spreading.distanceTo
-import it.unibo.collektive.stdlib.spreading.gossipMax
+import it.unibo.collektive.stdlib.spreading.gossipMaxBy
 import it.unibo.collektive.stdlib.spreading.gossipMin
-import it.unibo.collektive.stdlib.spreading.gradientCast
+import it.unibo.collektive.stdlib.spreading.gossipMinBy
 import kotlin.math.abs
 import kotlin.math.hypot
 
-fun <P: Position<P>> Aggregate<Int>.experiment(device: CollektiveDevice<P>): Double {
+fun <P : Position<P>> Aggregate<Int>.experiment(device: CollektiveDevice<P>): Double {
 //    val isSource: Boolean = device.randomGenerator.nextInt() % 50 == 0
     val metric = with(device) { distances() }
     return distanceTo(localId == 0 || localId == 1000 || localId == 100, metric)
-    //return (bullsEye(metric) * 1000).toInt() / 1000.0
+    // return (bullsEye(metric) * 1000).toInt() / 1000.0
 }
 
 val maxPaths = 10000
@@ -26,7 +26,7 @@ fun Aggregate<Int>.bullsEye(metric: Field<Int, Double>): Double {
     val distToRandom = distanceTo(gossipMin(localId) == localId, metric, maxPaths)
 
     // Finds the node that is farthest from the random starting node. This will serve as the first “extreme” of the network.
-    val firstExtreme = gossipMax(distToRandom to localId, compareBy { it.first }).second
+    val firstExtreme = gossipMaxBy(distToRandom to localId) { it.first }.second
 
     // Builds a distance gradient starting from the first extreme node.
     val distanceToExtreme = distanceTo(firstExtreme == localId, metric, maxPaths)
@@ -34,8 +34,7 @@ fun Aggregate<Int>.bullsEye(metric: Field<Int, Double>): Double {
 
     // Finds the node that is farthest from the first extreme.
     // This defines the other end of the main axis (the second “extreme”).
-    val (distanceBetweenExtremes, otherExtreme) =
-        gossipMax(distanceToExtreme to localId, compareBy { it.first })
+    val (distanceBetweenExtremes, otherExtreme) = gossipMaxBy(distanceToExtreme to localId) { it.first }
 
     // Builds a distance gradient from the second extreme.
     val distanceToOtherExtreme = distanceTo(otherExtreme == localId, metric, maxPaths)
@@ -45,7 +44,7 @@ fun Aggregate<Int>.bullsEye(metric: Field<Int, Double>): Double {
     val distanceFromMainDiameter = abs(distanceBetweenExtremes - distanceToExtreme - distanceToOtherExtreme)
     val distanceFromOpposedDiagonal = abs(distanceToExtreme - distanceToOtherExtreme)
     val approximateDistance = hypot(distanceFromOpposedDiagonal, distanceFromMainDiameter)
-    val centralNode = gossipMin(approximateDistance to localId, compareBy { it.first }).second
+    val centralNode = gossipMinBy(approximateDistance to localId) { it.first }.second
 
     // Measures how far each node is from the computed center.
     val distanceFromCenter = distanceTo(centralNode == localId, metric, maxPaths)

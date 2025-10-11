@@ -49,8 +49,7 @@ inline fun <reified ID : Any, reified Distance : Comparable<Distance>> Aggregate
 /**
  * Computes the hop distance from the closest [source].
  */
-@JvmOverloads
-inline fun <reified ID : Any> Aggregate<ID>.hopDistanceTo(source: Boolean, maxPaths: Int = Int.MAX_VALUE): Int =
-    hopGradientCast(source = source, local = 0, maxPaths = maxPaths) { neighborToSource, hereToNeighbor, _ ->
+inline fun <reified ID : Any> Aggregate<ID>.hopDistanceTo(source: Boolean): Int =
+    hopGradientCast(source = source, local = 0) { neighborToSource, hereToNeighbor, _ ->
         neighborToSource + hereToNeighbor
     }

@@ -9,8 +9,15 @@
 package it.unibo.collektive.stdlib.spreading
 
 import it.unibo.collektive.aggregate.Field
-import it.unibo.collektive.aggregate.api.*
-import it.unibo.collektive.stdlib.fields.minValueBy
+import it.unibo.collektive.aggregate.api.Aggregate
+import it.unibo.collektive.aggregate.api.DelicateCollektiveApi
+import it.unibo.collektive.aggregate.api.exchange
+import it.unibo.collektive.aggregate.api.mapNeighborhood
+import it.unibo.collektive.aggregate.api.share
+import it.unibo.collektive.aggregate.ids
+import it.unibo.collektive.aggregate.toMap
+import it.unibo.collektive.aggregate.values
+import it.unibo.collektive.stdlib.collapse.minBy
 import it.unibo.collektive.stdlib.util.Reducer
 import it.unibo.collektive.stdlib.util.coerceIn
 import it.unibo.collektive.stdlib.util.hops
@@ -43,12 +50,13 @@ inline fun <reified ID, reified Value, reified Distance> Aggregate<ID>.bellmanFo
     val topValue: Pair<Distance, Value> = top to local
     val distances = metric.coerceIn(bottom, top)
     return share(topValue) { neighborData ->
-        val pathsThroughNeighbors = neighborData.alignedMapValues(distances) { (fromSource, data), toNeighbor ->
-            val totalDistance = accumulate(bottom, top, fromSource, toNeighbor, accumulateDistance)
-            val newData = accumulateData(fromSource, toNeighbor, data)
-            totalDistance to newData
-        }
-        val bestThroughNeighbors = pathsThroughNeighbors.minValueBy { it.value.first } ?: topValue
+        val pathsThroughNeighbors =
+            neighborData.alignedMapValues(distances) { (fromSource, data), toNeighbor ->
+                val totalDistance = accumulate(bottom, top, fromSource, toNeighbor, accumulateDistance)
+                val newData = accumulateData(fromSource, toNeighbor, data)
+                totalDistance to newData
+            }
+        val bestThroughNeighbors = pathsThroughNeighbors.neighbors.values.minBy { it.first } ?: topValue
         when {
             source -> bottom to local
             else -> bestThroughNeighbors
@@ -75,8 +83,7 @@ inline fun <reified ID, reified Value> Aggregate<ID>.bellmanFordGradientCast(
         { _, _, data -> data },
     crossinline accumulateDistance: (fromSource: Double, toNeighbor: Double) -> Double = Double::plus,
     metric: Field<ID, Double>,
-): Value where ID : Any =
-    bellmanFordGradientCast(source, local, 0.0, Double.POSITIVE_INFINITY, accumulateData, accumulateDistance, metric)
+): Value where ID : Any = bellmanFordGradientCast(source, local, 0.0, Double.POSITIVE_INFINITY, accumulateData, accumulateDistance, metric)
 
 /**
  * Propagate [local] values across multiple spanning trees starting from all the devices in which [source] holds,
@@ -109,31 +116,42 @@ inline fun <reified ID : Any, reified Value, reified Distance : Comparable<Dista
     val coercedMetric = metric.coerceIn(bottom, top)
     val fromLocalSource = if (source) GradientPath(bottom, emptyList<ID>(), local) else null
     return exchange(fromLocalSource) { neighborData: Field<ID, GradientPath<ID, Value, Distance>?> ->
-        val neighbors = neighborData.neighbors
+        val neighbors = neighborData.neighbors.ids.set
         // Accumulated distances with neighbors, to be used to exclude invalid paths
-        val accDistances = neighborData.alignedMapValues(coercedMetric) { path, distance ->
-            path?.distance?.let { accumulateDistance(it, distance) }
-        }
-        val neighborAccumulatedDistances = accDistances.excludeSelf()
-        val nonLoopingPaths = neighborData.alignedMap(accDistances, coercedMetric) { id, path, accDist, distance ->
-            when {
-                id == localId || path == null || path.length > maxDiameter || localId in path.hops-> null
-                // Remove paths that go through a neighbor along a path that is not shorter than a direct connection.
-                accDist != null && path.hops.asSequence()
-                    .filter { it in neighbors }
-                    .map { neighborAccumulatedDistances[it] }
-                    .any { it == null || it < accDist } -> null
-                // Transform the remaining paths
-                else -> accDist to lazy {
-                    path.update(id, distance, bottom, top, accumulateDistance, accumulateData)
-                }
+        val accDistances =
+            neighborData.alignedMapValues(coercedMetric) { path, distance ->
+                path?.distance?.let { accumulateDistance(it, distance) }
             }
-        }.excludeSelf().values.asSequence().filterNotNull().sortedBy { it.first }.map { it.second.value }
-        val best = when {
-            fromLocalSource != null -> sequenceOf(fromLocalSource)
-            else -> {
-                val pathsHopSets by lazy { nonLoopingPaths.associate { it.nextHop to it.hops.toSet() } }
-                nonLoopingPaths.filter { reference ->
+        val neighborAccumulatedDistances = accDistances.neighbors.toMap()
+        val nonLoopingPaths =
+            neighborData
+                .alignedMap(accDistances, coercedMetric) { id, path, accDist, distance ->
+                    when {
+                        id == localId || path == null || path.length > maxDiameter || localId in path.hops -> null
+                        // Remove paths that go through a neighbor along a path that is not shorter than a direct connection.
+                        accDist != null &&
+                            path.hops
+                                .asSequence()
+                                .filter { it in neighbors }
+                                .map { neighborAccumulatedDistances[it] }
+                                .any { it == null || it < accDist } -> null
+                        // Transform the remaining paths
+                        else ->
+                            accDist to
+                                lazy {
+                                    path.update(id, distance, bottom, top, accumulateDistance, accumulateData)
+                                }
+                    }
+                }.neighbors.values.sequence
+                .filterNotNull()
+                .sortedBy { it.first }
+                .map { it.second.value }
+        val best =
+            when {
+                fromLocalSource != null -> sequenceOf(fromLocalSource)
+                else -> {
+                    val pathsHopSets by lazy { nonLoopingPaths.associate { it.nextHop to it.hops.toSet() } }
+                    nonLoopingPaths.filter { reference ->
                     /*
                      * Path-coherence: paths that contain inconsistent information must be removed.
                      * In particular, if some path passes through A and then B, and another reaches the source
