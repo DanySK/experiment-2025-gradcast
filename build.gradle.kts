@@ -1,6 +1,4 @@
-import org.gradle.configurationcache.extensions.capitalized
 import java.awt.GraphicsEnvironment
-import java.io.ByteArrayOutputStream
 
 plugins {
     application
@@ -88,7 +86,7 @@ File(rootProject.rootDir.path + "/src/main/yaml").listFiles()
                 this.additionalConfiguration()
             }
         }
-        val capitalizedName = simulationFile.nameWithoutExtension.capitalized()
+        val capitalizedName = simulationFile.nameWithoutExtension.replaceFirstChar { it.titlecase() }
         val graphic by basetask("run${capitalizedName}Graphic") {
             args(
                 "--override",
