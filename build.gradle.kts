@@ -70,13 +70,13 @@ val runAllBatch by tasks.register<DefaultTask>("runAllBatch") {
 File(rootProject.rootDir.path + "/src/main/yaml").listFiles()
     ?.filter { it.extension == "yml" }
     ?.sortedBy { it.nameWithoutExtension }
-    ?.forEach {
+    ?.forEach { simulationFile ->
         fun basetask(name: String, additionalConfiguration: JavaExec.() -> Unit = {}) = tasks.register<JavaExec>(name) {
             group = alchemistGroup
-            description = "Launches graphic simulation ${it.nameWithoutExtension}"
+            description = "Launches graphic simulation ${simulationFile.nameWithoutExtension}"
             mainClass.set("it.unibo.alchemist.Alchemist")
             classpath = sourceSets["main"].runtimeClasspath
-            args("run", it.absolutePath)
+            args("run", simulationFile.absolutePath)
             javaLauncher.set(
                 javaToolchains.launcherFor {
                     languageVersion.set(JavaLanguageVersion.of(usesJvm))
@@ -88,11 +88,11 @@ File(rootProject.rootDir.path + "/src/main/yaml").listFiles()
                 this.additionalConfiguration()
             }
         }
-        val capitalizedName = it.nameWithoutExtension.capitalized()
+        val capitalizedName = simulationFile.nameWithoutExtension.capitalized()
         val graphic by basetask("run${capitalizedName}Graphic") {
             args(
                 "--override",
-                "monitors: { type: SwingGUI, parameters: { graphics: effects/${it.nameWithoutExtension}.json } }",
+                "monitors: { type: SwingGUI, parameters: { graphics: effects/${simulationFile.nameWithoutExtension}.json } }",
                 "--override",
                 "launcher: { parameters: { batch: [], autoStart: false } }",
             )
