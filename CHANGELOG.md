@@ -1,3 +1,26 @@
+## [1.0.1](https://github.com/DanySK/experiment-2025-gradcast/compare/1.0.0...1.0.1) (2025-10-11)
+
+### Dependency updates
+
+* **deps:** update dependency it.unibo.alchemist:alchemist to v42.3.8 ([5f9c542](https://github.com/DanySK/experiment-2025-gradcast/commit/5f9c5424afe1e3392138f5bc1d05ffe0e3f43b2a))
+* **deps:** update dependency java to v23 ([7fc146d](https://github.com/DanySK/experiment-2025-gradcast/commit/7fc146d2ee0290525cbe59605fc64814fc08fe00))
+* **deps:** update eclipse-temurin docker tag to v25 ([d73975d](https://github.com/DanySK/experiment-2025-gradcast/commit/d73975d22abcadec0a8e1aabc35c8c8388cc2009))
+* **deps:** update gradle to v9 ([502eaf4](https://github.com/DanySK/experiment-2025-gradcast/commit/502eaf4d3cd2d572d2b8672a8c1e34b5fb675631))
+* **deps:** update plugin kotlin-qa to v0.91.0 ([3972dab](https://github.com/DanySK/experiment-2025-gradcast/commit/3972dabff4fedd97ee468bc939684588556002d1))
+* **deps:** update plugin multijvmtesting to v3.6.1 ([0c405cf](https://github.com/DanySK/experiment-2025-gradcast/commit/0c405cf6f2f3b24ceaf96ab261f50d9a257708ad))
+
+### Bug Fixes
+
+* format code for improved readability in CollektiveDevice.kt ([2ae70bf](https://github.com/DanySK/experiment-2025-gradcast/commit/2ae70bf3725d922660fb05a39caa06103b6810cb))
+* format data class definition for CollektiveAlchemistProgram ([9f1c4f6](https://github.com/DanySK/experiment-2025-gradcast/commit/9f1c4f6f4edf152f0235f9766b7989fb9203d313))
+* improve code formatting and readability ([546d9a4](https://github.com/DanySK/experiment-2025-gradcast/commit/546d9a41bf33f5805dfb69392aa004ea25b03938))
+* remove concurrency settings from build-and-deploy.yml and add to dispatcher.yml ([c2bbf0a](https://github.com/DanySK/experiment-2025-gradcast/commit/c2bbf0a4ee2fcd38c4d89722c05974d71c7dab63))
+* update Collektive to 27.3.0 ([b480b88](https://github.com/DanySK/experiment-2025-gradcast/commit/b480b88ef7fe70e13c043e9d13db5eec00703ae4))
+
+### General maintenance
+
+* **release:** update gradle.properties .env versions to 1.0.0 [skip ci] ([c744d4d](https://github.com/DanySK/experiment-2025-gradcast/commit/c744d4df54d50a482a4b0819d6d7e4175d1076d2))
+
 ## 1.0.0 (2025-10-11)
 
 ### Dependency updates
