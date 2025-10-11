@@ -1,6 +1,6 @@
 [versions]
 alchemist = "42.2.3"
-kotlin = "2.1.21"
+kotlin = "2.2.20"
 collektive = "24.0.10"
 
 [libraries]
