@@ -15,7 +15,13 @@ repositories {
     gradlePluginPortal()
 }
 
-val usesJvm: Int = rootProject.file(".java-version").readText().trim().substringBefore('.').toInt()
+val usesJvm: Int =
+    rootProject
+        .file(".java-version")
+        .readText()
+        .trim()
+        .substringBefore('.')
+        .toInt()
 
 multiJvm {
     jvmVersionForCompilation.set(usesJvm)
@@ -36,16 +42,22 @@ dependencies {
 
 // Heap size estimation for batches
 val maxHeap: Long? by project
-val heap: Long = maxHeap ?: if (System.getProperty("os.name").lowercase().contains("linux")) {
-    val memRead = providers.exec {
-        executable = "bash"
-        args = listOf("-c", "cat /proc/meminfo | grep MemAvailable | grep -o '[0-9]*'")
-    }.standardOutput.asText.get().trim().toLong() / 1024
-    memRead.also { println("Detected ${it}MB RAM available.") } * 9 / 10
-} else {
-    // Guess 16GB RAM of which 2 used by the OS
-    14 * 1024L
-}
+val heap: Long =
+    maxHeap ?: if (System.getProperty("os.name").lowercase().contains("linux")) {
+        val memRead =
+            providers
+                .exec {
+                    executable = "bash"
+                    args = listOf("-c", "cat /proc/meminfo | grep MemAvailable | grep -o '[0-9]*'")
+                }.standardOutput.asText
+                .get()
+                .trim()
+                .toLong() / 1024
+        memRead.also { println("Detected ${it}MB RAM available.") } * 9 / 10
+    } else {
+        // Guess 16GB RAM of which 2 used by the OS
+        14 * 1024L
+    }
 val taskSizeFromProject: Int? by project
 val taskSize = taskSizeFromProject ?: 512
 val threadCount = maxOf(1, minOf(Runtime.getRuntime().availableProcessors(), heap.toInt() / taskSize))
@@ -65,7 +77,8 @@ val runAllBatch by tasks.register<DefaultTask>("runAllBatch") {
 /*
  * Scan the folder with the simulation files, and create a task for each one of them.
  */
-File(rootProject.rootDir.path + "/src/main/yaml").listFiles()
+File(rootProject.rootDir.path + "/src/main/yaml")
+    .listFiles()
     ?.filter { it.extension == "yml" }
     ?.sortedBy { it.nameWithoutExtension }
     ?.forEach { simulationFile ->
@@ -100,17 +113,19 @@ File(rootProject.rootDir.path + "/src/main/yaml").listFiles()
             description = "Launches batch experiments for $capitalizedName"
             maxHeapSize = "${minOf(heap.toInt(), Runtime.getRuntime().availableProcessors() * taskSize)}m"
             File("data").mkdirs()
-            args("--override",
+            args(
+                "--override",
                 """
-                    launcher: {
-                        parameters: {
-                            batch: [ seed, spacing, error ],
-                            showProgress: true,
-                            autoStart: true,
-                            parallelism: $threadCount,
-                        }
+                launcher: {
+                    parameters: {
+                        batch: [ seed, spacing, error ],
+                        showProgress: true,
+                        autoStart: true,
+                        parallelism: $threadCount,
                     }
-                """.trimIndent())
+                }
+                """.trimIndent(),
+            )
         }
         runAllBatch.dependsOn(batch)
     }

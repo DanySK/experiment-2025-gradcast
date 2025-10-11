@@ -83,7 +83,8 @@ inline fun <reified ID, reified Value> Aggregate<ID>.bellmanFordGradientCast(
         { _, _, data -> data },
     crossinline accumulateDistance: (fromSource: Double, toNeighbor: Double) -> Double = Double::plus,
     metric: Field<ID, Double>,
-): Value where ID : Any = bellmanFordGradientCast(source, local, 0.0, Double.POSITIVE_INFINITY, accumulateData, accumulateDistance, metric)
+): Value where ID : Any =
+    bellmanFordGradientCast(source, local, 0.0, Double.POSITIVE_INFINITY, accumulateData, accumulateDistance, metric)
 
 /**
  * Propagate [local] values across multiple spanning trees starting from all the devices in which [source] holds,
@@ -118,40 +119,30 @@ inline fun <reified ID : Any, reified Value, reified Distance : Comparable<Dista
     return exchange(fromLocalSource) { neighborData: Field<ID, GradientPath<ID, Value, Distance>?> ->
         val neighbors = neighborData.neighbors.ids.set
         // Accumulated distances with neighbors, to be used to exclude invalid paths
-        val accDistances =
-            neighborData.alignedMapValues(coercedMetric) { path, distance ->
-                path?.distance?.let { accumulateDistance(it, distance) }
-            }
+        val accDistances = neighborData.alignedMapValues(coercedMetric) { path, distance ->
+            path?.distance?.let { accumulateDistance(it, distance) }
+        }
         val neighborAccumulatedDistances = accDistances.neighbors.toMap()
-        val nonLoopingPaths =
-            neighborData
-                .alignedMap(accDistances, coercedMetric) { id, path, accDist, distance ->
-                    when {
-                        id == localId || path == null || path.length > maxDiameter || localId in path.hops -> null
-                        // Remove paths that go through a neighbor along a path that is not shorter than a direct connection.
-                        accDist != null &&
-                            path.hops
-                                .asSequence()
-                                .filter { it in neighbors }
-                                .map { neighborAccumulatedDistances[it] }
-                                .any { it == null || it < accDist } -> null
-                        // Transform the remaining paths
-                        else ->
-                            accDist to
-                                lazy {
-                                    path.update(id, distance, bottom, top, accumulateDistance, accumulateData)
-                                }
-                    }
-                }.neighbors.values.sequence
-                .filterNotNull()
-                .sortedBy { it.first }
-                .map { it.second.value }
-        val best =
+        val nonLoopingPaths = neighborData.alignedMap(accDistances, coercedMetric) { id, path, accDist, distance ->
             when {
-                fromLocalSource != null -> sequenceOf(fromLocalSource)
-                else -> {
-                    val pathsHopSets by lazy { nonLoopingPaths.associate { it.nextHop to it.hops.toSet() } }
-                    nonLoopingPaths.filter { reference ->
+                id == localId || path == null || path.length > maxDiameter || localId in path.hops -> null
+                // Remove paths that go through a neighbor along a path that is not shorter than a direct connection.
+                accDist != null &&
+                    path.hops.asSequence()
+                        .filter { it in neighbors }
+                        .map { neighborAccumulatedDistances[it] }
+                        .any { it == null || it < accDist } -> null
+                // Transform the remaining paths
+                else ->
+                    accDist to
+                        lazy { path.update(id, distance, bottom, top, accumulateDistance, accumulateData) }
+            }
+        }.neighbors.values.sequence.filterNotNull().sortedBy { it.first }.map { it.second.value }
+        val best = when {
+            fromLocalSource != null -> sequenceOf(fromLocalSource)
+            else -> {
+                val pathsHopSets by lazy { nonLoopingPaths.associate { it.nextHop to it.hops.toSet() } }
+                nonLoopingPaths.filter { reference ->
                     /*
                      * Path-coherence: paths that contain inconsistent information must be removed.
                      * In particular, if some path passes through A and then B, and another reaches the source
@@ -376,16 +367,15 @@ inline fun <reified ID : Any, reified Value> Aggregate<ID>.multiIntGradientCast(
 /**
  * A path segment along a potential field that reaches the current device,
  * after [distance], starting from [source],
- * carrying [data] through the [nextHop].
+ * carrying [data] along multiple [hops].
  *
  * This data class is designed to be shared within [gradientCast] and derivative functions.
  */
-data class GradientPath<ID: Any, Value, Distance: Comparable<Distance>> (
+data class GradientPath<ID : Any, Value, Distance : Comparable<Distance>>(
     val distance: Distance,
     val hops: List<ID>,
     val data: Value,
-): Comparable<GradientPath<ID, Value, Distance>> {
-
+) : Comparable<GradientPath<ID, Value, Distance>> {
     val source: ID get() = hops.first()
 
     val nextHop get() = hops.last()
@@ -404,7 +394,7 @@ data class GradientPath<ID: Any, Value, Distance: Comparable<Distance>> (
         bottom: Distance,
         top: Distance,
         crossinline accumulateDistance: Reducer<Distance>,
-        crossinline accumulateData: (fromSource: Distance, toNeighbor: Distance, data: Value) -> Value
+        crossinline accumulateData: (fromSource: Distance, toNeighbor: Distance, data: Value) -> Value,
     ): GradientPath<ID, Value, Distance> {
         val totalDistance = accumulate(bottom, top, distance, distanceToNeighbor, accumulateDistance)
         val updatedData = accumulateData(distance, distanceToNeighbor, data)
@@ -416,12 +406,12 @@ data class GradientPath<ID: Any, Value, Distance: Comparable<Distance>> (
 }
 
 @OptIn(ExperimentalContracts::class)
-inline fun <D: Comparable<D>> accumulate(
+inline fun <D : Comparable<D>> accumulate(
     bottom: D,
     top: D,
     distance: D,
     distanceToNeighbor: D,
-    accumulator: Reducer<D>
+    accumulator: Reducer<D>,
 ): D {
     contract {
         callsInPlace(accumulator, kotlin.contracts.InvocationKind.EXACTLY_ONCE)
@@ -429,7 +419,7 @@ inline fun <D: Comparable<D>> accumulate(
     val totalDistance = accumulator(distance, distanceToNeighbor).coerceIn(bottom, top)
     check(totalDistance >= distance && totalDistance >= distanceToNeighbor) {
         "The provided distance accumulation function violates the triangle inequality: " +
-                "accumulating $distance and $distanceToNeighbor produced $totalDistance"
+            "accumulating $distance and $distanceToNeighbor produced $totalDistance"
     }
     return totalDistance
 }
